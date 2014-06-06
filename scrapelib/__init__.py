@@ -10,20 +10,14 @@ from .cache import CachingSession, FileCache    # noqa
 if sys.version_info[0] < 3:         # pragma: no cover
     from urllib2 import urlopen as urllib_urlopen
     from urllib2 import URLError as urllib_URLError
-    import urlparse
-    import robotparser
     _str_type = unicode
 else:                               # pragma: no cover
-    PY3K = True
     from urllib.request import urlopen as urllib_urlopen
     from urllib.error import URLError as urllib_URLError
-    from urllib import parse as urlparse
-    from urllib import robotparser
     _str_type = str
 
-__version__ = '0.9.0'
-_user_agent = ' '.join(('scrapelib', __version__,
-                        requests.utils.default_user_agent()))
+__version__ = '0.9.1'
+_user_agent = ' '.join(('scrapelib', __version__, requests.utils.default_user_agent()))
 
 
 class NullHandler(logging.Handler):
@@ -32,18 +26,6 @@ class NullHandler(logging.Handler):
 
 _log = logging.getLogger('scrapelib')
 _log.addHandler(NullHandler())
-
-
-class RobotExclusionError(requests.RequestException):
-    """
-    Raised when an attempt is made to access a page denied by
-    the host's robots.txt file.
-    """
-
-    def __init__(self, message, url, user_agent):
-        super(RobotExclusionError, self).__init__(message)
-        self.url = url
-        self.user_agent = user_agent
 
 
 class HTTPMethodUnavailableError(requests.RequestException):
@@ -64,8 +46,7 @@ class HTTPError(requests.HTTPError):
     """
 
     def __init__(self, response, body=None):
-        message = '%s while retrieving %s' % (response.status_code,
-                                              response.url)
+        message = '%s while retrieving %s' % (response.status_code, response.url)
         super(HTTPError, self).__init__(message)
         self.response = response
         self.body = body or self.response.text
@@ -136,45 +117,6 @@ class ThrottledSession(requests.Session):
         return super(ThrottledSession, self).request(method, url, **kwargs)
 
 
-class RobotsTxtSession(requests.Session):
-
-    def __init__(self):
-        super(RobotsTxtSession, self).__init__()
-        self._robot_parsers = {}
-        self.follow_robots = True
-
-    def _robot_allowed(self, user_agent, parsed_url):
-        _log.info("checking robots permission for %s" % parsed_url.geturl())
-        robots_url = urlparse.urljoin(parsed_url.scheme + "://" +
-                                      parsed_url.netloc, "robots.txt")
-
-        try:
-            parser = self._robot_parsers[robots_url]
-            _log.info("using cached copy of %s" % robots_url)
-        except KeyError:
-            _log.info("grabbing %s" % robots_url)
-            parser = robotparser.RobotFileParser()
-            parser.set_url(robots_url)
-            parser.read()
-            self._robot_parsers[robots_url] = parser
-
-        return parser.can_fetch(user_agent, parsed_url.geturl())
-
-    def request(self, method, url, **kwargs):
-        parsed_url = urlparse.urlparse(url)
-        user_agent = (kwargs.get('headers', {}).get('User-Agent') or
-                      self.headers.get('User-Agent'))
-        # robots.txt is http-only
-        if (parsed_url.scheme in ('http', 'https') and
-                self.follow_robots and
-                not self._robot_allowed(user_agent, parsed_url)):
-            raise RobotExclusionError(
-                "User-Agent '%s' not allowed at '%s'" % (
-                    user_agent, url), url, user_agent)
-
-        return super(RobotsTxtSession, self).request(method, url, **kwargs)
-
-
 # this object exists because Requests assumes it can call
 # resp.raw._original_response.msg.getheaders() and we need to cope with that
 class DummyObject(object):
@@ -191,12 +133,10 @@ _dummy._original_response.msg = DummyObject()
 
 class FTPAdapter(requests.adapters.BaseAdapter):
 
-    def send(self, request, stream=False, timeout=None, verify=False,
-             cert=None, proxies=None):
+    def send(self, request, stream=False, timeout=None, verify=False, cert=None, proxies=None):
         if request.method != 'GET':
-            raise HTTPMethodUnavailableError(
-                "FTP requests do not support method '%s'" % request.method,
-                request.method)
+            raise HTTPMethodUnavailableError("FTP requests do not support method '%s'" %
+                                             request.method, request.method)
         try:
             real_resp = urllib_urlopen(request.url, timeout=timeout)
             # we're going to fake a requests.Response with this
@@ -241,12 +181,10 @@ class RetrySession(requests.Session):
             try:
                 resp = super(RetrySession, self).request(method, url, **kwargs)
                 # break from loop on an accepted response
-                if self.accept_response(resp) or (resp.status_code == 404
-                                                  and not retry_on_404):
+                if self.accept_response(resp) or (resp.status_code == 404 and not retry_on_404):
                     break
 
-            except (requests.HTTPError, requests.ConnectionError,
-                    requests.Timeout) as e:
+            except (requests.HTTPError, requests.ConnectionError, requests.Timeout) as e:
                 exception_raised = e
 
             # if we're going to retry, sleep first
@@ -264,12 +202,8 @@ class RetrySession(requests.Session):
             return resp
 
 
-# compose sessions, order matters
-class Scraper(RobotsTxtSession,    # first, check robots.txt
-              CachingSession,      # cache responses
-              ThrottledSession,    # throttle requests
-              RetrySession,        # do retries
-              ):
+# compose sessions, order matters (cache then throttle then retry)
+class Scraper(CachingSession, ThrottledSession, RetrySession):
     """
     Scraper is the most important class provided by scrapelib (and generally
     the only one to be instantiated directly).  It provides a large number
@@ -283,19 +217,13 @@ class Scraper(RobotsTxtSession,    # first, check robots.txt
         on 4xx or 5xx response
     :param requests_per_minute: maximum requests per minute (0 for
         unlimited, defaults to 60)
-    :param follow_robots: respect robots.txt files (default: True)
     :param retry_attempts: number of times to retry if timeout occurs or
         page returns a (non-404) error
     :param retry_wait_seconds: number of seconds to retry after first failure,
         subsequent retries will double this wait
     """
-    def __init__(self,
-                 raise_errors=True,
-                 requests_per_minute=60,
-                 follow_robots=True,
-                 retry_attempts=0,
-                 retry_wait_seconds=5,
-                 header_func=None):
+    def __init__(self, raise_errors=True, requests_per_minute=60, retry_attempts=0,
+                 retry_wait_seconds=5, header_func=None):
 
         super(Scraper, self).__init__()
         self.mount('ftp://', FTPAdapter())
@@ -305,9 +233,6 @@ class Scraper(RobotsTxtSession,    # first, check robots.txt
 
         # added by ThrottledSession
         self.requests_per_minute = requests_per_minute
-
-        # added by RobotsTxtSession
-        self.follow_robots = follow_robots
 
         # added by RetrySession
         self.retry_attempts = retry_attempts
@@ -350,25 +275,17 @@ class Scraper(RobotsTxtSession,    # first, check robots.txt
         timeout = kwargs.pop('timeout', self.timeout)
 
         if self._header_func:
-            headers = requests.structures.CaseInsensitiveDict(
-                self._header_func(url))
+            headers = requests.structures.CaseInsensitiveDict(self._header_func(url))
         else:
             headers = {}
-        try:
-            # requests < 1.2.2
-            headers = requests.sessions.merge_kwargs(headers, self.headers)
-            headers = requests.sessions.merge_kwargs(kwargs.pop('headers', {}),
-                                                     headers)
-        except AttributeError:
-            # requests >= 1.2.2
-            headers = requests.sessions.merge_setting(headers, self.headers)
-            headers = requests.sessions.merge_setting(
-                kwargs.pop('headers', {}), headers)
 
-        return super(Scraper, self).request(method, url, timeout=timeout,
-                                            headers=headers, **kwargs)
+        headers = requests.sessions.merge_setting(headers, self.headers)
+        headers = requests.sessions.merge_setting(kwargs.pop('headers', {}), headers)
 
-    def urlopen(self, url, method='GET', body=None, retry_on_404=False):
+        return super(Scraper, self).request(method, url, timeout=timeout, headers=headers,
+                                            **kwargs)
+
+    def urlopen(self, url, method='GET', body=None, retry_on_404=False, **kwargs):
         """
             Make an HTTP request and return a :class:`ResultStr` object.
 
@@ -387,14 +304,14 @@ class Scraper(RobotsTxtSession,    # first, check robots.txt
 
         _log.info("{0} - {1}".format(method.upper(), url))
 
-        resp = self.request(method, url, data=body, retry_on_404=retry_on_404)
+        resp = self.request(method, url, data=body, retry_on_404=retry_on_404, **kwargs)
 
         if self.raise_errors and not self.accept_response(resp):
             raise HTTPError(resp)
         else:
             return ResultStr(self, resp, url)
 
-    def urlretrieve(self, url, filename=None, method='GET', body=None):
+    def urlretrieve(self, url, filename=None, method='GET', body=None, dir=None, **kwargs):
         """
         Save result of a request to a file, similarly to
         :func:`urllib.urlretrieve`.
@@ -403,25 +320,27 @@ class Scraper(RobotsTxtSession,    # first, check robots.txt
         `exceptions`_.
 
         A filename may be provided or :meth:`urlretrieve` will safely create a
-        temporary file.  Either way it is the responsibility of the caller
-        to ensure that the temporary file is deleted when it is no longer
-        needed.
+        temporary file. If a directory is provided, a file will be given a random
+        name within the specified directory. Either way, it is the responsibility
+        of the caller to ensure that the temporary file is deleted when it is no
+        longer needed.
 
         :param url: URL for request
         :param filename: optional name for file
         :param method: any valid HTTP method, but generally GET or POST
         :param body: optional body for request, to turn parameters into
             an appropriate string use :func:`urllib.urlencode()`
+        :param dir: optional directory to place file in
         :returns filename, response: tuple with filename for saved
             response (will be same as given filename if one was given,
             otherwise will be a temp file in the OS temp directory) and
             a :class:`Response` object that can be used to inspect the
             response headers.
         """
-        result = self.urlopen(url, method, body)
+        result = self.urlopen(url, method, body, **kwargs)
 
         if not filename:
-            fd, filename = tempfile.mkstemp()
+            fd, filename = tempfile.mkstemp(dir=dir)
             f = os.fdopen(fd, 'wb')
         else:
             f = open(filename, 'wb')
@@ -432,8 +351,8 @@ class Scraper(RobotsTxtSession,    # first, check robots.txt
         return filename, result.response
 
 
-_default_scraper = Scraper(follow_robots=False, requests_per_minute=0)
+_default_scraper = Scraper(requests_per_minute=0)
 
 
-def urlopen(url, method='GET', body=None):  # pragma: no cover
-    return _default_scraper.urlopen(url, method, body)
+def urlopen(url, method='GET', body=None, **kwargs):  # pragma: no cover
+    return _default_scraper.urlopen(url, method, body, **kwargs)

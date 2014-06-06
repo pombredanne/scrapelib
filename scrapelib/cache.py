@@ -27,8 +27,7 @@ class CachingSession(requests.Session):
         if method != 'get':
             return None
 
-        return requests.Request(url=url,
-                                params=kwargs.get('params', {})).prepare().url
+        return requests.Request(url=url, params=kwargs.get('params', {})).prepare().url
 
     def should_cache_response(self, response):
         """ Check if a given Response object should be cached.
@@ -126,7 +125,7 @@ class FileCache(object):
             resp.status_code = int(resp.headers.pop('status').split(' ')[0])
             resp.encoding = resp.headers.pop('encoding')
             resp.url = resp.headers.get('content-location', orig_key)
-            #TODO: resp.request = request
+            # TODO: resp.request = request
             return resp
         except IOError:
             return None

@@ -1,8 +1,9 @@
+# pragma: no cover
 from . import Scraper, _user_agent
 import argparse
 
 
-def scrapeshell():                  # pragma: no cover
+def scrapeshell():
     # clear argv for IPython
     import sys
     orig_argv = sys.argv[1:]
@@ -25,14 +26,12 @@ def scrapeshell():                  # pragma: no cover
     parser.add_argument('url', help="url to scrape")
     parser.add_argument('--ua', dest='user_agent', default=_user_agent,
                         help='user agent to make requests with')
-    parser.add_argument('--robots', dest='robots', action='store_true',
-                        default=False, help='obey robots.txt')
     parser.add_argument('-p', '--postdata', dest='postdata',
                         default=None,
                         help="POST data (will make a POST instead of GET)")
     args = parser.parse_args(orig_argv)
 
-    scraper = Scraper(follow_robots=args.robots)
+    scraper = Scraper()
     scraper.user_agent = args.user_agent
     url = args.url
     if args.postdata:

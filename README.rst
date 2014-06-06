@@ -2,16 +2,27 @@
 scrapelib
 =========
 
-scrapelib is a library for making requests to websites, particularly those
-that may be less-than-reliable.
+.. raw:: html
+
+    <p style="height:22px">
+    <a href="https://travis-ci.org/sunlightlabs/scrapelib">
+      <img src="https://travis-ci.org/sunlightlabs/scrapelib.svg?branch=master"/>
+    </a>
+    </p>
+    <p style="height:22px">
+    <a href="https://coveralls.io/r/sunlightlabs/scrapelib">
+      <img src="https://coveralls.io/repos/sunlightlabs/scrapelib.png"/>
+    </a>
+    </p>
+
+
+scrapelib is a library for making requests to less-than-reliable websites, it is implemented
+(as of 0.7) as a wrapper around `requests <http://python-requests.org>`_.
 
 scrapelib originated as part of the `Open States <http://openstates.org/>`_
 project to scrape the websites of all 50 state legislatures and as a result
 was therefore designed with features desirable when dealing with sites that
 have intermittent errors or require rate-limiting.
-
-As of version 0.7 scrapelib has been retooled to take advantage of the superb
-`requests <http://python-requests.org>`_ library.
 
 Advantages of using scrapelib over alternatives like httplib2 simply using
 requests as-is:
@@ -21,10 +32,8 @@ requests as-is:
 * support for simple caching with pluggable cache backends
 * request throttling
 * configurable retries for non-permanent site failures
-* optional robots.txt compliance
 
-scrapelib is a project of Sunlight Labs (c) 2013.
-All code is released under a BSD-style license, see LICENSE for details.
+scrapelib is a project of Sunlight Labs released under a BSD-style license, see LICENSE for details.
 
 Written by James Turk <jturk@sunlightfoundation.com>
 
@@ -37,7 +46,7 @@ Contributors:
 Requirements
 ============
 
-* python 2.7 or 3.3
+* python 2.7, 3.3, 3.4
 * requests >= 1.0
 
 Installation
@@ -57,13 +66,10 @@ Example Usage
 ::
 
   import scrapelib
-  s = scrapelib.Scraper(requests_per_minute=10, follow_robots=True)
+  s = scrapelib.Scraper(requests_per_minute=10)
 
   # Grab Google front page
   s.urlopen('http://google.com')
-
-  # Will raise RobotExclusionError
-  s.urlopen('http://google.com/search')
 
   # Will be throttled to 10 HTTP requests per minute
   while True:
